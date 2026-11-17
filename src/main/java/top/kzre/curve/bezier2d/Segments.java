@@ -1,6 +1,7 @@
 package top.kzre.curve.bezier2d;
 
 public final class Segments {
+
     private Segments() {}
 
     public static Pair eval(Segment seg, double t) {
@@ -95,6 +96,89 @@ public final class Segments {
         // 构造新的控制点
         Pair newP1 = new Pair(p0.getX() + u * d1x, p0.getY() + u * d1y);
         Pair newP2 = new Pair(p3.getX() + v * d2x, p3.getY() + v * d2y);
+
+        return new Segment(p0, newP1, newP2, p3);
+    }
+
+    /**
+     * 目标点在段上的最近点参数（段内 t ∈ [0, 1]）。
+     * 先均匀粗采样定位区间，再用牛顿迭代细化。
+     */
+    public static double closestT(Segment seg, double px, double py) {
+        double bestT = 0, bestDist = Double.POSITIVE_INFINITY;
+        for (int s = 0; s <= 10; s++) {
+            double t = s / 10.0;
+            Pair p = eval(seg, t);
+            double d = Math.hypot(p.getX() - px, p.getY() - py);
+            if (d < bestDist) { bestDist = d; bestT = t; }
+        }
+        return refineT(seg, px, py, bestT);
+    }
+
+    /** 距离一阶条件 f(t) = (B(t) - P)·B'(t) = 0 的牛顿迭代，结果夹在 [0, 1]。 */
+    private static double refineT(Segment seg, double px, double py, double startT) {
+        double t = startT;
+        for (int iter = 0; iter < 5; iter++) {
+            Pair pt = eval(seg, t);
+            Pair d1 = deriv(seg, t);
+            Pair d2 = deriv2(seg, t);
+            double dx = pt.getX() - px, dy = pt.getY() - py;
+            double f = dx * d1.getX() + dy * d1.getY();
+            double fd = (d1.getX() * d1.getX() + d1.getY() * d1.getY()) + (dx * d2.getX() + dy * d2.getY());
+            if (Math.abs(fd) < 1e-12) break;
+            double dt = f / fd;
+            t -= dt;
+            if (t < 0) t = 0;
+            if (t > 1) t = 1;
+            if (Math.abs(dt) < 1e-8) break;
+        }
+        return t;
+    }
+
+    /**
+     * 自由拟合：调整段使其经过目标点 (x, y)，且目标点就是段的极点
+     * ——离弦 P0P3 最远、切线平行于弦的那一点。端点 P0 和 P3 固定。
+     *
+     * <p>在弦坐标系（u 沿弦、n 垂直弦）里把极点定在段内 t = 0.5：
+     * 法向偏移 h(t) = 3(1-t)²t·n1 + 3(1-t)t²·n2，
+     * 解 h(0.5) = qy 与 h'(0.5) = 0 得 n1 = n2 = 4·qy/3——
+     * 于是 h(t) = 4·qy·t(1-t)，极点唯一且在 t=0.5，不会越过弦。
+     * 弦向由 B(0.5) = (P0 + 3P1 + 3P2 + P3)/8 的 x 分量给出
+     * f(P1) + f(P2) = (8·qx - L)/3，剩下的自由度按「离原控制点最近」
+     * 平分给两个手柄，原有的不对称保持不变。
+     *
+     * <p>与 {@link #fit} 的区别：fit 只沿原手柄方向缩放，原手柄共线时
+     * （直线段——挤出的新段正是这种）方程组奇异；本方法不受原手柄约束。
+     */
+    public static Segment fitFree(Segment seg, double x, double y) {
+        Pair p0 = seg.getA();
+        Pair p3 = seg.getD();
+
+        double chordX = p3.getX() - p0.getX();
+        double chordY = p3.getY() - p0.getY();
+        double lenSq = chordX * chordX + chordY * chordY;
+        if (lenSq < 1e-12) {
+            return seg;                       // 端点重合——无弦向可依
+        }
+        double len = Math.sqrt(lenSq);
+        double ux = chordX / len, uy = chordY / len;
+        double nx = -uy, ny = ux;
+
+        double dx = x - p0.getX(), dy = y - p0.getY();
+        double qx = dx * ux + dy * uy;        // 目标点沿弦坐标
+        double qy = dx * nx + dy * ny;        // 目标点离弦距离（带符号）
+
+        double nv = 4.0 * qy / 3.0;           // 两个控制点法向等距
+
+        // 弦向：补足 f(P1)+f(P2) 的缺口，两手柄各担一半
+        double u1 = (seg.getB().getX() - p0.getX()) * ux + (seg.getB().getY() - p0.getY()) * uy;
+        double u2 = (seg.getC().getX() - p0.getX()) * ux + (seg.getC().getY() - p0.getY()) * uy;
+        double half = ((8.0 * qx - len) / 3.0 - u1 - u2) / 2.0;
+        u1 += half;
+        u2 += half;
+
+        Pair newP1 = new Pair(p0.getX() + u1 * ux + nv * nx, p0.getY() + u1 * uy + nv * ny);
+        Pair newP2 = new Pair(p0.getX() + u2 * ux + nv * nx, p0.getY() + u2 * uy + nv * ny);
 
         return new Segment(p0, newP1, newP2, p3);
     }

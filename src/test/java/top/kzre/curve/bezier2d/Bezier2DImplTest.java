@@ -741,6 +741,58 @@ class Bezier2DImplTest {
         assertEquals(3.0, cp.getDx1(), 1e-9);
         assertEquals(3.0, cp.getDy1(), 1e-9);
     }
+
+    @Test
+    void fitFree_putsApexAtTargetOnStraightSegment() {
+        ControlPoint a = ControlPoint.builder().x(0).y(0).build();
+        ControlPoint b = ControlPoint.builder().x(40).y(0).build();
+        Segment fitted = Segments.fitFree(Segment.of(a, b), 12, -15);
+
+        Pair apex = Segments.eval(fitted, 0.5);
+        assertEquals(12.0, apex.getX(), 1e-9);
+        assertEquals(-15.0, apex.getY(), 1e-9);
+
+        // 极点处切线应平行于弦——法向分量为 0
+        assertEquals(0.0, Segments.deriv(fitted, 0.5).getY(), 1e-9);
+
+        // 全段最大偏离恰为目标点高度，且不越过弦
+        double maxDev = 0;
+        for (int i = 0; i <= 2000; i++) {
+            double y = Segments.eval(fitted, i / 2000.0).getY();
+            assertTrue(y <= 1e-12, "segment crossed the chord at t=" + (i / 2000.0));
+            maxDev = Math.max(maxDev, -y);
+        }
+        assertEquals(15.0, maxDev, 1e-3);
+    }
+
+    @Test
+    void fitFree_keepsApexOnTiltedAsymmetricSegment() {
+        Segment seg = new Segment(new Pair(3, -2), new Pair(11, 9), new Pair(24, 7), new Pair(35, 6));
+        Segment fitted = Segments.fitFree(seg, 18, -6);
+
+        assertEquals(3.0, fitted.getA().getX(), 1e-12);
+        assertEquals(-2.0, fitted.getA().getY(), 1e-12);
+        assertEquals(35.0, fitted.getD().getX(), 1e-12);
+        assertEquals(6.0, fitted.getD().getY(), 1e-12);
+
+        Pair apex = Segments.eval(fitted, 0.5);
+        assertEquals(18.0, apex.getX(), 1e-9);
+        assertEquals(-6.0, apex.getY(), 1e-9);
+
+        double cx = fitted.getD().getX() - fitted.getA().getX();
+        double cy = fitted.getD().getY() - fitted.getA().getY();
+        double dx = Segments.deriv(fitted, 0.5).getX();
+        double dy = Segments.deriv(fitted, 0.5).getY();
+        double cross = Math.abs(dx * cy - dy * cx);
+        double scale = Math.hypot(dx, dy) * Math.hypot(cx, cy);
+        assertTrue(cross < 1e-9 * scale, "tangent at apex is not parallel to the chord");
+    }
+
+    @Test
+    void fitFree_leavesDegenerateSegmentAlone() {
+        Segment seg = new Segment(new Pair(7, 7), new Pair(7, 7), new Pair(7, 7), new Pair(7, 7));
+        assertSame(seg, Segments.fitFree(seg, 20, 30));
+    }
 }
 
 

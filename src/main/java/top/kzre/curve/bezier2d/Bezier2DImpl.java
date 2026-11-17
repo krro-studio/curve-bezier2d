@@ -84,14 +84,7 @@ public class Bezier2DImpl implements Bezier2D.Spec {
 
         for (int i = fromSeg; i <= toSeg; i++) {
             Segment seg = curve.getSegment(i);
-            double localBestT = 0, localBestDist = Double.POSITIVE_INFINITY;
-            for (int s = 0; s <= 10; s++) {
-                double t = s / 10.0;
-                Pair p = Segments.eval(seg, t);
-                double d = Math.hypot(p.getX() - px, p.getY() - py);
-                if (d < localBestDist) { localBestDist = d; localBestT = t; }
-            }
-            double refinedT = refineLocalT(seg, px, py, localBestT);
+            double refinedT = Segments.closestT(seg, px, py);
             Pair refinedPt = Segments.eval(seg, refinedT);
             double refinedDist = Math.hypot(refinedPt.getX() - px, refinedPt.getY() - py);
             if (refinedDist < bestDist) {
@@ -101,25 +94,6 @@ public class Bezier2DImpl implements Bezier2D.Spec {
             }
         }
         return new ClosestPointResult(bestPt, bestGlobalT, bestDist);
-    }
-
-    private double refineLocalT(Segment seg, double px, double py, double startT) {
-        double t = startT;
-        for (int iter = 0; iter < 5; iter++) {
-            Pair pt = Segments.eval(seg, t);
-            Pair d1 = Segments.deriv(seg, t);
-            Pair d2 = Segments.deriv2(seg, t);
-            double dx = pt.getX() - px, dy = pt.getY() - py;
-            double f = dx * d1.getX() + dy * d1.getY();
-            double fd = (d1.getX() * d1.getX() + d1.getY() * d1.getY()) + (dx * d2.getX() + dy * d2.getY());
-            if (Math.abs(fd) < 1e-12) break;
-            double dt = f / fd;
-            t -= dt;
-            if (t < 0) t = 0;
-            if (t > 1) t = 1;
-            if (Math.abs(dt) < 1e-8) break;
-        }
-        return t;
     }
 
     // ═══════════════════════════════════════════════════════════
